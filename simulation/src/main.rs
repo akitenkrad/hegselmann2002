@@ -1,10 +1,13 @@
 //! Hegselmann & Krause (2002) "Opinion Dynamics and Bounded Confidence" — 再現実験の CLI．
 //!
 //! `run`   : 単一の (n, ε, 初期分布) で BC 力学を実行する．
+//!           `--eps` (対称) と `--eps-l` / `--eps-r` (非対称 BC; 論文 §4.2 / Fig. 10–13)
+//!           の両モードに対応．
 //! `sweep` : ε を走査し，各 (ε, run) で最終メトリクスを `sweep_summary.csv` に集計する．
+//!           対称スイープのみ (Phase 2)．非対称スイープは Phase 3 reproduce 側で扱う余地．
 //!
-//! Phase 1 + Phase 2 のみ実装している．Phase 3 (非対称信頼 `--eps-l` / `--eps-r` /
-//! `reproduce`) は未着手．
+//! Phase 1 + Phase 2 + Phase 3 非対称 BC まで実装済み．論文 Figure 一括再現
+//! (`reproduce`) のみ Phase 3 残作業．
 
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -21,7 +24,7 @@ use hegselmann_bc_simulation::simulation::{ensure_output_dir, run, save_metrics,
 #[derive(Parser, Debug)]
 #[command(
     name = "hegselmann-bc",
-    about = "Hegselmann & Krause (2002) Opinion Dynamics and Bounded Confidence — 再現実験 (Phase 1 + Phase 2)"
+    about = "Hegselmann & Krause (2002) Opinion Dynamics and Bounded Confidence — 再現実験 (Phase 1 + Phase 2 + Phase 3 非対称 BC)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -42,9 +45,17 @@ struct RunArgs {
     #[arg(long, default_value_t = 625)]
     n: usize,
 
-    /// 対称信頼幅 ε．
+    /// 対称信頼幅 ε．`--eps-l` / `--eps-r` 非指定時に両側に適用される．
     #[arg(long, default_value_t = 0.15)]
     eps: f64,
+
+    /// 左信頼幅 ε_l (非対称 BC モード時のみ; --eps-r と必ずペア指定)．省略時は --eps を両側に適用 (対称)．
+    #[arg(long)]
+    eps_l: Option<f64>,
+
+    /// 右信頼幅 ε_r (非対称 BC モード時のみ; --eps-l と必ずペア指定)．省略時は --eps を両側に適用 (対称)．
+    #[arg(long)]
+    eps_r: Option<f64>,
 
     /// 初期意見プロファイル (uniform | regular)．
     #[arg(long, default_value = "uniform")]
@@ -175,27 +186,52 @@ fn cmd_run(args: RunArgs) {
     let timestamp = timestamp();
     let output_dir = format!("{}/{}", args.output_dir, timestamp);
 
-    let cfg = Config::from_symmetric(
-        args.n,
-        args.eps,
-        start_profile,
-        args.max_iterations,
-        args.tol,
-        args.seed,
-        output_dir.clone(),
-    );
+    let cfg = match (args.eps_l, args.eps_r) {
+        (None, None) => Config::from_symmetric(
+            args.n,
+            args.eps,
+            start_profile,
+            args.max_iterations,
+            args.tol,
+            args.seed,
+            output_dir.clone(),
+        ),
+        (Some(l), Some(r)) => Config::from_asymmetric(
+            args.n,
+            l,
+            r,
+            start_profile,
+            args.max_iterations,
+            args.tol,
+            args.seed,
+            output_dir.clone(),
+        ),
+        _ => panic!("--eps-l と --eps-r は必ずペアで指定してください"),
+    };
 
     ensure_output_dir(&cfg.output_dir);
 
     println!("=== Hegselmann–Krause (2002) BC 力学 再現実験 ===");
-    println!(
-        "n: {} | ε: {} | 初期分布: {} | max_iter: {} | tol: {}",
-        cfg.n,
-        cfg.eps_l,
-        start_profile.label(),
-        cfg.max_iterations,
-        cfg.tol,
-    );
+    if cfg.is_symmetric() {
+        println!(
+            "n: {} | ε: {} | 初期分布: {} | max_iter: {} | tol: {}",
+            cfg.n,
+            cfg.eps_l,
+            start_profile.label(),
+            cfg.max_iterations,
+            cfg.tol,
+        );
+    } else {
+        println!(
+            "n: {} | ε_l/ε_r: {} / {} | 初期分布: {} | max_iter: {} | tol: {}",
+            cfg.n,
+            cfg.eps_l,
+            cfg.eps_r,
+            start_profile.label(),
+            cfg.max_iterations,
+            cfg.tol,
+        );
+    }
     println!("シード: {:?}", cfg.seed);
     println!("出力先: {}", cfg.output_dir);
     println!("-------------------------------------------");

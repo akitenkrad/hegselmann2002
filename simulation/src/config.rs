@@ -43,9 +43,9 @@ pub fn parse_start_profile(s: &str) -> Result<StartProfile, String> {
 
 /// 単一実行の設定．
 ///
-/// `eps_l` と `eps_r` は左右の信頼幅で，Phase 1 では常に `eps_l == eps_r`
-/// (対称 BC モデル) として扱う．Phase 3 では別々に指定する `--eps-l` /
-/// `--eps-r` を CLI から受けて独自 mechanism に切替える予定．
+/// `eps_l` と `eps_r` は左右の信頼幅で，Phase 1 / 2 では常に `eps_l == eps_r`
+/// (対称 BC モデル) として扱う．Phase 3 で `--eps-l` / `--eps-r` を CLI から
+/// 受け，`HegselmannKrauseMechanism::with_asymmetric` で駆動する．
 #[derive(Debug, Clone)]
 pub struct Config {
     /// エージェント数 n．
@@ -86,7 +86,8 @@ impl Config {
     /// 対称版 (`eps_l == eps_r == eps`) を構築する便利コンストラクタ．
     ///
     /// Phase 1 / Phase 2 の標準経路はすべてこれを経由する．Phase 3 で非対称
-    /// 信頼を扱う場合は [`Config`] のフィールドを直接設定する．
+    /// 信頼を扱う場合は [`Config::from_asymmetric`] か [`Config`] のフィールド
+    /// 直接設定を使う．
     pub fn from_symmetric(
         n: usize,
         eps: f64,
@@ -108,9 +109,37 @@ impl Config {
         }
     }
 
+    /// 非対称版 (`eps_l != eps_r` 想定; 等値でも問題ない) を構築する
+    /// 便利コンストラクタ．Phase 3 の `--eps-l` / `--eps-r` 経路で使う．
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_asymmetric(
+        n: usize,
+        eps_l: f64,
+        eps_r: f64,
+        start_profile: StartProfile,
+        max_iterations: usize,
+        tol: f64,
+        seed: Option<u64>,
+        output_dir: String,
+    ) -> Self {
+        Config {
+            n,
+            eps_l,
+            eps_r,
+            start_profile,
+            max_iterations,
+            tol,
+            seed,
+            output_dir,
+        }
+    }
+
     /// 対称信頼幅 (`eps_l == eps_r`) かどうか．
     ///
-    /// Phase 1 のドライバ ([`crate::simulation::run`]) はこれを前提とする．
+    /// ドライバ ([`crate::simulation::run`]) はこれに応じて
+    /// [`socsim_mechanisms::HegselmannKrauseMechanism::new`] と
+    /// [`socsim_mechanisms::HegselmannKrauseMechanism::with_asymmetric`] を
+    /// 切り替える．
     pub fn is_symmetric(&self) -> bool {
         (self.eps_l - self.eps_r).abs() < f64::EPSILON
     }
@@ -139,7 +168,7 @@ pub struct RunConfigJson {
     pub n: usize,
     pub eps_l: f64,
     pub eps_r: f64,
-    /// `eps_l == eps_r` のとき `true`．Phase 1 では常に true．
+    /// `eps_l == eps_r` のとき `true`．Phase 3 の非対称 BC モード時のみ false．
     pub symmetric: bool,
     pub start_profile: &'static str,
     pub max_iterations: usize,
@@ -176,6 +205,29 @@ mod tests {
             ..Config::default()
         };
         assert!(!cfg.is_symmetric());
+    }
+
+    #[test]
+    fn asymmetric_constructor_sets_fields() {
+        let cfg = Config::from_asymmetric(
+            150,
+            0.05,
+            0.25,
+            StartProfile::Uniform,
+            80,
+            1e-6,
+            Some(3),
+            "out".to_string(),
+        );
+        assert_eq!(cfg.n, 150);
+        assert_eq!(cfg.eps_l, 0.05);
+        assert_eq!(cfg.eps_r, 0.25);
+        assert!(!cfg.is_symmetric());
+        assert_eq!(cfg.start_profile, StartProfile::Uniform);
+        assert_eq!(cfg.max_iterations, 80);
+        assert_eq!(cfg.tol, 1e-6);
+        assert_eq!(cfg.seed, Some(3));
+        assert_eq!(cfg.output_dir, "out");
     }
 
     #[test]

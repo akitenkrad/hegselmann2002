@@ -16,7 +16,7 @@
 //! `PostStep` フェーズに配線する．BC モデルは決定論的なので有限時間で収束する
 //! (論文 §3 Result 5)．
 //!
-//! ## Phase 3 (未着手) の拡張点
+//! ## Phase 3 拡張点 (非対称信頼)
 //!
 //! 非対称信頼 `ε_l ≠ ε_r` の信頼集合
 //!
@@ -24,13 +24,10 @@
 //! I(i, x) = { j : −ε_l ≤ x_j − x_i ≤ ε_r } ∪ {i}
 //! ```
 //!
-//! は現行 `HegselmannKrauseMechanism` (単一 `epsilon`) では表現できないため，
-//! Phase 3 では本リポジトリ独自の `AsymmetricHegselmannKrauseMechanism` を追加
-//! 予定 (設計書 §4.3 の Mechanism × Phase 表)．socsim 本体へも upstream PR と
-//! して投げる予定．
-//!
-//! TODO(Phase 3): `AsymmetricHegselmannKrauseMechanism { eps_l: f64, eps_r: f64 }`
-//! を本モジュールに追加し，`crate::config::Config::is_symmetric` が `false`
-//! の場合に `crate::simulation::run` から差し替えて使う．
+//! は socsim-mechanisms PR #47 で [`HegselmannKrauseMechanism`] 自身が
+//! [`HegselmannKrauseMechanism::with_asymmetric`] コンストラクタとして
+//! サポートするようになったため，本リポジトリでは独自 mechanism を実装する
+//! 必要は無い．対称 / 非対称の選択は [`crate::simulation::run`] が
+//! [`crate::config::Config::is_symmetric`] に応じて行う．
 
 pub use socsim_mechanisms::{ConvergenceMechanism, HegselmannKrauseMechanism};

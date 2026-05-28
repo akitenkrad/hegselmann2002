@@ -14,7 +14,7 @@ use rand::Rng;
 
 use socsim_core::{derive_seed, SimRng};
 use socsim_engine::{SequentialScheduler, SimulationBuilder};
-use socsim_mechanisms::{max_abs_delta, MeanOperator};
+use socsim_mechanisms::{max_abs_delta, regular_profile, MeanOperator};
 
 use crate::config::{Config, StartProfile};
 use crate::mechanisms::{ConvergenceMechanism, HegselmannKrauseMechanism};
@@ -44,42 +44,30 @@ pub struct SimulationResult {
 /// - [`StartProfile::Uniform`]: `[0,1]` 上の一様乱数 (`Uniform(0,1)`)．論文
 ///   Fig. 3 / 12 の設定．
 /// - [`StartProfile::Regular`]: 等間隔 `x_i = i / (n-1)`．論文 Fig. 4–8 の
-///   設定．`n = 1` のときは中点 `0.5` を返す．
+///   設定．`n = 1` のときは中点 `0.5` を返す．`socsim-mechanisms` PR #48 で
+///   導入された共有ヘルパ [`regular_profile`] を流用する (既存のローカル実装
+///   `(0..n).map(|i| i / (n-1)).collect()` と完全に同等で出力ビット同一)．
 pub fn init_opinions(cfg: &Config, rng: &mut SimRng) -> Vec<f64> {
     match cfg.start_profile {
         StartProfile::Uniform => (0..cfg.n).map(|_| rng.gen_range(0.0..1.0)).collect(),
-        StartProfile::Regular => {
-            if cfg.n <= 1 {
-                vec![0.5; cfg.n]
-            } else {
-                let denom = (cfg.n - 1) as f64;
-                (0..cfg.n).map(|i| i as f64 / denom).collect()
-            }
-        }
+        StartProfile::Regular => regular_profile(cfg.n),
     }
 }
 
 /// シミュレーションを実行する．
 ///
-/// Phase 1 では `cfg.eps_l == cfg.eps_r` を仮定し，対称 BC として
-/// [`HegselmannKrauseMechanism::new`] を `cfg.eps_l` で構築する．非対称
-/// (`eps_l != eps_r`) を渡すと panic する — Phase 3 の独自 mechanism で対応する
-/// 設計余地として残してある (TODO はメカニズムモジュール参照)．
+/// Phase 3 対応: [`Config::is_symmetric`] に応じて
+/// [`HegselmannKrauseMechanism::new`] (対称) と
+/// [`HegselmannKrauseMechanism::with_asymmetric`] (非対称 `ε_l ≠ ε_r`) を
+/// 切り替える．socsim-mechanisms PR #47 の bit-identical 契約により，
+/// `eps_l == eps_r` のとき両者は同じ結果になるが，明示性のため `is_symmetric`
+/// で分岐する (対称経路は Phase 1 と同一の挙動を保証する)．
 ///
 /// `max_delta` (および収束フラグ) はメカニズムではなくドライバ側で，観測した
 /// 連続ステップの意見スナップショット間 [`max_abs_delta`] として算出する．
 /// `socsim-mechanisms` の `ConvergenceMechanism` も同じロジックで `request_stop`
 /// するため，両者は同じステップで停止する．
 pub fn run(cfg: &Config) -> SimulationResult {
-    assert!(
-        cfg.is_symmetric(),
-        "Phase 1 では対称 BC (eps_l == eps_r) のみサポートする (eps_l={}, eps_r={}). \
-         非対称 BC は Phase 3 で AsymmetricHegselmannKrauseMechanism に切り替え予定．",
-        cfg.eps_l,
-        cfg.eps_r,
-    );
-    let eps = cfg.eps_l;
-
     let root = cfg.seed.unwrap_or_else(rand::random);
 
     // 初期意見分布 (root から派生した init RNG)．
@@ -93,13 +81,25 @@ pub fn run(cfg: &Config) -> SimulationResult {
         cfg.eps_r,
         cfg.max_iterations as u64,
     );
+    let opinion_mechanism: Box<HegselmannKrauseMechanism> = if cfg.is_symmetric() {
+        // 対称 BC: Phase 1 と bit-identical な経路．
+        Box::new(HegselmannKrauseMechanism::new(
+            cfg.eps_l,
+            MeanOperator::Arithmetic,
+        ))
+    } else {
+        // 非対称 BC (論文 §4.2 / Fig. 10–13): socsim-mechanisms PR #47 で
+        // 追加された with_asymmetric を流用する．
+        Box::new(HegselmannKrauseMechanism::with_asymmetric(
+            cfg.eps_l,
+            cfg.eps_r,
+            MeanOperator::Arithmetic,
+        ))
+    };
     let mut sim = SimulationBuilder::new(world)
         .scheduler(Box::new(SequentialScheduler))
         .seed(derive_seed(root, &[RNG_ENGINE]))
-        .add_mechanism(Box::new(HegselmannKrauseMechanism::new(
-            eps,
-            MeanOperator::Arithmetic,
-        )))
+        .add_mechanism(opinion_mechanism)
         .add_mechanism(Box::new(ConvergenceMechanism::new(cfg.tol)))
         .build();
 
@@ -239,10 +239,48 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Phase 1 では対称 BC")]
-    fn asymmetric_eps_panics_in_phase_1() {
-        let mut cfg = cfg_symmetric(20, 0.15, StartProfile::Uniform, 10);
-        cfg.eps_r = 0.30; // 非対称化
-        let _ = run(&cfg);
+    fn asymmetric_eps_l_equals_eps_r_matches_symmetric_bit_for_bit() {
+        // PR #47 の bit-identical 契約をローカルでも検証する．
+        let sym = cfg_symmetric(200, 0.15, StartProfile::Uniform, 100);
+        let mut asym = sym.clone();
+        asym.eps_l = 0.15;
+        asym.eps_r = 0.15;
+        // 上記は既に is_symmetric() = true だが，将来の eps_l/eps_r 分離設定でも
+        // 結果が変わらないことを担保する．
+        let a = run(&sym);
+        let b = run(&asym);
+        assert_eq!(a.final_iteration, b.final_iteration);
+        assert_eq!(a.opinion_history.last(), b.opinion_history.last());
+    }
+
+    #[test]
+    fn asymmetric_shifts_mean_toward_wider_side() {
+        // 論文 §4.2 / Fig. 11 の質的主張: eps_l ≪ eps_r で最終平均が右へ偏る．
+        let sym = Config::from_symmetric(
+            200,
+            0.15,
+            StartProfile::Uniform,
+            200,
+            1e-6,
+            Some(7),
+            "results".to_string(),
+        );
+        let asym = Config {
+            eps_l: 0.05,
+            eps_r: 0.25,
+            ..sym.clone()
+        };
+        let a = run(&sym);
+        let b = run(&asym);
+        let sym_mean = a.metrics_history.last().unwrap().mean;
+        let asym_mean = b.metrics_history.last().unwrap().mean;
+        assert!(
+            (sym_mean - 0.5).abs() < 0.05,
+            "対称 ε=0.15 の平均は ~0.5 付近のはず (got {sym_mean})"
+        );
+        assert!(
+            asym_mean > sym_mean + 0.02,
+            "非対称 (eps_l=0.05, eps_r=0.25) の平均は対称より上のはず (got asym={asym_mean}, sym={sym_mean})"
+        );
     }
 }
