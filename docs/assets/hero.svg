@@ -1,0 +1,70 @@
+<!-- hegselmann2002 hero. Vault SVG style contract (palette + dark mode). -->
+<svg width="100%" viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Hegselmann &amp; Krause 2002 — Opinion Dynamics and Bounded Confidence</title>
+<desc>Continuous opinions in [0,1] under bounded confidence: small confidence radii leave many surviving opinion clusters (plurality); intermediate radii yield two camps (polarization); large radii reach a single consensus.</desc>
+<style>
+  .t  { font-family: -apple-system, "Helvetica Neue", "Hiragino Sans", sans-serif; font-size: 14px; fill: #2C2C2A; }
+  .ts { font-family: -apple-system, "Helvetica Neue", "Hiragino Sans", sans-serif; font-size: 13px; fill: #444441; }
+  .tl { font-family: -apple-system, "Helvetica Neue", "Hiragino Sans", sans-serif; font-size: 12px; font-weight: 600; fill: #534AB7; letter-spacing: 2px; }
+  .title { font-family: -apple-system, "Helvetica Neue", "Hiragino Sans", sans-serif; font-size: 26px; font-weight: 600; fill: #2C2C2A; }
+  .glab { font-family: -apple-system, "Helvetica Neue", "Hiragino Sans", sans-serif; font-size: 11px; font-weight: 500; fill: #888780; letter-spacing: 0.5px; }
+  .axis { stroke: #C7C5BD; stroke-width: 1; }
+  .traj { stroke: #534AB7; stroke-width: 1.2; fill: none; opacity: 0.45; }
+  .trajT { stroke: #0F6E56; stroke-width: 1.2; fill: none; opacity: 0.45; }
+  .trajM { stroke: #C29A2A; stroke-width: 1.2; fill: none; opacity: 0.45; }
+  .dot { fill: #534AB7; }
+  .dotT { fill: #0F6E56; }
+  .dotM { fill: #C29A2A; }
+  @media (prefers-color-scheme: dark) {
+    .t  { fill: #E5E5E2; }
+    .ts { fill: #C7C5BD; }
+    .tl { fill: #AFA9EC; }
+    .title { fill: #E5E5E2; }
+    .glab { fill: #8C8B85; }
+    .axis { stroke: #5F5E5A; }
+    .traj { stroke: #AFA9EC; }
+    .trajT { stroke: #5DCAA5; }
+    .trajM { stroke: #E0BB54; }
+    .dot { fill: #AFA9EC; }
+    .dotT { fill: #5DCAA5; }
+    .dotM { fill: #E0BB54; }
+  }
+</style>
+
+<!-- left: label + title -->
+<text x="40" y="60" class="tl">OPINION DYNAMICS</text>
+<text x="40" y="96" class="title">Bounded Confidence</text>
+<text x="40" y="128" class="title">&amp; Phase Transition</text>
+<text x="40" y="162" class="ts">Hegselmann &amp; Krause (2002, JASSS)</text>
+<text x="40" y="184" class="t">x_i(t+1) = mean{ x_j : |x_i − x_j| ≤ ε }</text>
+<text x="40" y="210" class="glab">plurality · polarization · consensus</text>
+<text x="40" y="234" class="glab">ε small → many clusters · ε large → one</text>
+
+<!-- right: opinion trajectory plot showing three clusters surviving -->
+<g transform="translate(500, 40)">
+  <!-- axes -->
+  <line x1="0" y1="0" x2="0" y2="220" class="axis"/>
+  <line x1="0" y1="220" x2="360" y2="220" class="axis"/>
+  <text x="-8" y="6" class="glab" text-anchor="end">1</text>
+  <text x="-8" y="224" class="glab" text-anchor="end">0</text>
+  <text x="-30" y="118" class="glab" transform="rotate(-90 -30 118)" text-anchor="middle">opinion</text>
+  <text x="180" y="244" class="glab" text-anchor="middle">time t</text>
+
+  <!-- upper cluster (purple) -->
+  <path class="traj" d="M0 28 C 90 38, 180 58, 360 60"/>
+  <path class="traj" d="M0 58 C 90 60, 180 60, 360 60"/>
+  <path class="traj" d="M0 80 C 90 72, 180 64, 360 60"/>
+  <circle cx="360" cy="60" r="4" class="dot"/>
+
+  <!-- middle cluster (gold) -->
+  <path class="trajM" d="M0 100 C 90 108, 180 116, 360 120"/>
+  <path class="trajM" d="M0 132 C 90 128, 180 124, 360 120"/>
+  <circle cx="360" cy="120" r="4" class="dotM"/>
+
+  <!-- lower cluster (teal) -->
+  <path class="trajT" d="M0 196 C 90 188, 180 178, 360 174"/>
+  <path class="trajT" d="M0 162 C 90 168, 180 172, 360 174"/>
+  <path class="trajT" d="M0 184 C 90 180, 180 176, 360 174"/>
+  <circle cx="360" cy="174" r="4" class="dotT"/>
+</g>
+</svg>

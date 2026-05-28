@@ -1,0 +1,31 @@
+[package]
+name = "hegselmann-bc-simulation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hegselmann_bc_simulation"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hegselmann-bc"
+path = "src/main.rs"
+
+[dependencies]
+rand        = { version = "0.8", features = ["small_rng"] }
+csv         = "1.3"
+serde       = { version = "1.0", features = ["derive"] }
+clap        = { version = "4.5", features = ["derive"] }
+
+# social-simulation framework (socsim) — ABM のエンジン基盤．
+# 非空間・非ネットワークのため core + engine のみ．commit は Cargo.lock で固定．
+socsim-core       = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-core" }
+socsim-engine     = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-engine" }
+# 意見力学パック (HegselmannKrauseMechanism / ConvergenceMechanism / MeanOperator / max_abs_delta)．
+# 自前 BoundedConfidenceUpdate を書かず，対称 BC はこれをそのまま流用する．
+socsim-mechanisms = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-mechanisms" }
+# 正準統計 (mean / variance / distinct_clusters / spread / bimodality_coefficient 等)．
+# 論文固有指標 (n_splits, phase 分類) のみローカル実装し，それ以外は流用する．
+socsim-metrics    = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-metrics" }
+# 出力 (timestamp / latest symlink / serde CSV/JSON 書き出し) の共有ヘルパ．
+socsim-results    = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-results" }
