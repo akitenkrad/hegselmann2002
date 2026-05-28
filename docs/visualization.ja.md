@@ -57,6 +57,51 @@ uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest
 uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest --json
 ```
 
+## `reproduce` — 論文 Figure 一括再現
+
+Rust バイナリ (`cargo run --release -- run / sweep ...`) を Figure spec ごとに 1 回ずつ呼び出し，生成された CSV を読み込んで Figure ごとの PNG を 1 つのタイムスタンプ付きディレクトリにまとめる．中間 `opinions.csv` / `metrics.csv` / `sweep_summary.csv` は cargo の出力ルート (`results/<inner_ts>(_sweep)?/`) に残り，そのパスは `reproduce_summary.json` に記録される．
+
+```bash
+uv run hegselmann-bc-tools reproduce                  # フル再現 (論文値)
+uv run hegselmann-bc-tools reproduce --quick          # 軽量モード (n=125, runs=5, 動作確認用)
+uv run hegselmann-bc-tools reproduce --specs fig02,fig03
+uv run hegselmann-bc-tools reproduce --skip-build     # 事前ビルド済みなら build をスキップ
+```
+
+対応 Figure 仕様 (論文 §4 のベンチマーク):
+
+| Spec | サブコマンド | パラメータ | 期待される挙動 |
+|---|---|---|---|
+| `fig02` | `run` | `n=625, ε=0.01, uniform, max_iter=50, seed=42` | 約 38 クラスタ (fragmentation) |
+| `fig07` | `run` | `n=100, ε=0.05, regular, max_iter=50, seed=1` | 8 splits (polarization) |
+| `fig08` | `run` | `n=100, ε=0.25, regular, max_iter=30, seed=1` | 合意 (consensus) |
+| `fig03` | `sweep` | `n=625, ε∈[0.01,0.40] step=0.01, runs=50, seed=42` | 生存意見数の急減 (3 相転移) |
+| `fig12` | `fig03` の流用 | 同じ sweep データ | 最終平均意見 + 最終分散の 2 段プロット |
+| `fig11` | `run` × 4 | `n=625, max_iter=100, seed=42`，非対称 `(ε_l,ε_r)∈{(.20,.20),(.15,.25),(.10,.30),(.05,.35)}` | 2×2 パネル．ε_r が広いほど最終平均が右へシフト |
+
+出力構造:
+
+```
+results/reproduce_<YYYYMMDD_HHMMSS>/
+├── reproduce_summary.json        # 各 spec の引数・cargo 呼び出し・状態・所要時間
+└── figures/
+    ├── fig02_n625_eps0.01_uniform.png
+    ├── fig03_sweep_n_surviving.png
+    ├── fig07_n100_eps0.05_regular.png
+    ├── fig08_n100_eps0.25_regular.png
+    ├── fig11_asymmetric_panel.png
+    └── fig12_sweep_mean_variance.png
+```
+
+| フラグ | 既定値 | 説明 |
+|---|---|---|
+| `--specs` | (全て) | カンマ区切りで実行する spec ID (`fig02,fig03,fig07,fig08,fig11,fig12`) |
+| `--output-dir` | results | 結果ルート (workspace 相対)．reproduce 一式は `<output-dir>/reproduce_<ts>/` に出る |
+| `--cargo-output-dir` | `--output-dir` と同じ | cargo の `--output-dir` に渡す中間 CSV 用ディレクトリ |
+| `--workspace-root` | (自動) | cargo workspace ルートを上書き (環境変数 `HEGSELMANN_BC_PROJECT_ROOT` も可) |
+| `--quick` | off | fig02 / fig03 / fig12 を縮小実行 (n=125, runs=5)．動作確認専用．論文値検証には使わない |
+| `--skip-build` | off | `cargo build --release` をスキップ (ビルド済み前提) |
+
 ## フォントについて
 
 スクリプトは `font.family = "Hiragino Sans"` を要求する (macOS の日本語ラベル用)．他プラットフォームでは `visualize.py` / `visualize_sweep.py` 冒頭の `plt.rcParams` で別の CJK フォントへ差し替えればよい．未インストールでも図自体は出力される (ラベルが既定の sans にフォールバックする)．

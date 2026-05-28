@@ -57,6 +57,51 @@ uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest
 uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest --json
 ```
 
+## `reproduce` — batch paper-figure reproduction
+
+Runs the Rust binary (`cargo run --release -- run / sweep ...`) once per Figure spec, reads back the produced CSVs, and writes a consolidated PNG per Figure into a single timestamped directory. Intermediate `opinions.csv` / `metrics.csv` / `sweep_summary.csv` outputs are kept under the cargo output root (`results/<inner_ts>(_sweep)?/`); their paths are recorded in `reproduce_summary.json`.
+
+```bash
+uv run hegselmann-bc-tools reproduce                  # full reproduction (paper values)
+uv run hegselmann-bc-tools reproduce --quick          # lightweight smoke run (n=125, runs=5)
+uv run hegselmann-bc-tools reproduce --specs fig02,fig03
+uv run hegselmann-bc-tools reproduce --skip-build     # reuse a pre-built cargo binary
+```
+
+Supported Figure specs (paper §4 benchmarks):
+
+| Spec | Subcommand | Parameters | Expected behaviour |
+|---|---|---|---|
+| `fig02` | `run` | `n=625, ε=0.01, uniform, max_iter=50, seed=42` | ≈ 38 clusters (fragmentation) |
+| `fig07` | `run` | `n=100, ε=0.05, regular, max_iter=50, seed=1` | 8 splits (polarization) |
+| `fig08` | `run` | `n=100, ε=0.25, regular, max_iter=30, seed=1` | consensus |
+| `fig03` | `sweep` | `n=625, ε∈[0.01,0.40] step=0.01, runs=50, seed=42` | sharp drop in surviving opinions (3-phase transition) |
+| `fig12` | derived from `fig03` | same sweep data | mean final opinion + final variance, 2-panel |
+| `fig11` | `run` × 4 | `n=625, max_iter=100, seed=42`, asymmetric `(ε_l,ε_r)∈{(.20,.20),(.15,.25),(.10,.30),(.05,.35)}` | 2×2 panel; final mean shifts right as ε_r widens |
+
+Output structure:
+
+```
+results/reproduce_<YYYYMMDD_HHMMSS>/
+├── reproduce_summary.json        # per-spec args / cargo invocations / status / timings
+└── figures/
+    ├── fig02_n625_eps0.01_uniform.png
+    ├── fig03_sweep_n_surviving.png
+    ├── fig07_n100_eps0.05_regular.png
+    ├── fig08_n100_eps0.25_regular.png
+    ├── fig11_asymmetric_panel.png
+    └── fig12_sweep_mean_variance.png
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--specs` | (all) | comma-separated spec IDs to run (`fig02,fig03,fig07,fig08,fig11,fig12`) |
+| `--output-dir` | results | result root (workspace-relative); the reproduce bundle lands at `<output-dir>/reproduce_<ts>/` |
+| `--cargo-output-dir` | same as `--output-dir` | passed as `--output-dir` to cargo for intermediate per-run CSVs |
+| `--workspace-root` | (auto) | override the cargo workspace root (also via env `HEGSELMANN_BC_PROJECT_ROOT`) |
+| `--quick` | off | shrink fig02 / fig03 / fig12 (n=125, runs=5) for a fast smoke run; do not use for paper-value verification |
+| `--skip-build` | off | skip `cargo build --release` (assumes the binary is already built) |
+
 ## Note on fonts
 
 The scripts request `font.family = "Hiragino Sans"` for Japanese labels (macOS). On other platforms, substitute an installed CJK font in the `plt.rcParams` line at the top of `visualize.py` / `visualize_sweep.py`; the figure still renders if the font is missing — labels just fall back to the default sans.

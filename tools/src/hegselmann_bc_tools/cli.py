@@ -32,6 +32,10 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
         "実行結果ディレクトリの設定 (config.json / sweep_config.json) の表示",
         "hegselmann_bc_tools.show_experiment_settings:main",
     ),
+    "reproduce": (
+        "論文 Fig. (2/3/7/8/11/12) の一括再現",
+        "hegselmann_bc_tools.reproduce_paper:main",
+    ),
 }
 
 
