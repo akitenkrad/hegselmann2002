@@ -15,10 +15,11 @@ hegselmann2002/
 │   ├── src/
 │   │   ├── main.rs            # CLI (run / sweep)
 │   │   ├── lib.rs             # バイナリ + 統合テスト用のモジュール再エクスポート
-│   │   ├── config.rs          # Config + config.json シリアライズ
+│   │   ├── config.rs          # Config + runvault の parameters シリアライズ
 │   │   ├── world.rs           # socsim WorldState 実装 (OpinionWorld，完全グラフ)
 │   │   ├── mechanisms.rs      # socsim Mechanism 再エクスポート (HegselmannKrauseMechanism / ConvergenceMechanism)
 │   │   ├── metrics.rs         # 生存意見数・分裂数・相分類
+│   │   ├── record.rs          # runvault への記録 (論文メタデータ / 指標 / 終端イベント)
 │   │   └── simulation.rs      # 初期化 + run ドライバ (SimulationBuilder 配線)
 │   └── tests/
 │       └── integration_test.rs
@@ -38,7 +39,7 @@ hegselmann2002/
 
 ## socsim フレームワーク上のモデル
 
-シミュレーション基盤は社会シミュレーション基盤 [rs-social-simulation-tools](https://github.com/akitenkrad/rs-social-simulation-tools) (socsim) ── git 依存とし，commit は `Cargo.lock` で固定する．正準 Hegselmann–Krause モデルは **完全グラフ・非空間** モデルなので，`socsim-core` (traits)・`socsim-engine` (Simulation / Builder)・`socsim-mechanisms` (HK / Convergence パック)・`socsim-metrics` (統計)・`socsim-results` (出力ヘルパ) のみを使う ── **`socsim-grid` も `socsim-net` も使わない**．
+シミュレーション基盤は社会シミュレーション基盤 [rs-social-simulation-tools](https://github.com/akitenkrad/rs-social-simulation-tools) (socsim) ── git 依存とし，commit は `Cargo.lock` で固定する．正準 Hegselmann–Krause モデルは **完全グラフ・非空間** モデルなので，`socsim-core` (traits)・`socsim-engine` (Simulation / Builder)・`socsim-mechanisms` (HK / Convergence パック)・`socsim-metrics` (統計) のみを使う ── **`socsim-grid` も `socsim-net` も使わない**．出力の置き場と同一性は [runvault](https://github.com/akitenkrad/rs-runvault) が持つので，`socsim-results` (timestamp / latest シンボリックリンク / CSV・JSON 書き出し) も使わない．
 
 使用する socsim API:
 
@@ -72,15 +73,17 @@ x_i(t+1) = (1 / |I(i, x(t))|) Σ_{j ∈ I(i, x(t))} x_j(t)
 
 ## メトリクス
 
-`metrics.csv` は各ステップに `t, n_surviving, mean, variance, n_splits, phase, max_delta` を記録する．
+`metrics.csv` は runvault の long 形式 (`run_uid, step, step_unit, scope, name, value`) で，ステップごとに `n_surviving` / `mean` / `variance` / `n_splits` / `max_delta` を `step_unit=step`・`scope=run` で記録する．run 全体を表す `converged` / `final_iteration` は `step` を持たない行として同じファイルに入る．
 
 - `n_surviving` — 生存意見クラスタ数．`socsim_metrics::stats::distinct_clusters(opinions, CLUSTER_TOL)` (`CLUSTER_TOL = 1e-4`) で計算する (ソート列の隣接ペアのギャップ > tol を新クラスタの開始とみなす greedy single-linkage)．論文 §4 *surviving opinions* / Fig. 12 *number of opinions at convergence* に対応する．
 - `n_splits` — `n_surviving − 1` (論文 Fig. 7 "8 splits")．等価な定義: ソート済み意見プロファイル中で隣接ペアのギャップが `CLUSTER_TOL` を超える箇所の数．
 - `mean`, `variance` — `socsim_metrics::stats::{mean, variance}` を流用．
 - `max_delta` — `socsim_mechanisms::max_abs_delta(prev, curr)`，収束診断．
-- `phase` — `consensus = 1` (n ≤ 1)，`polarization = 2` (2..=10)，`plurality = 3` (> 10)．数値閾値は本リポジトリの可読性のための選択で，論文自身は定性的に分類している．
+- `phase` — `consensus` (n ≤ 1)，`polarization` (2..=10)，`plurality` (> 10)．区分の閾値は本リポジトリの可読性のための選択で，論文自身は定性的に分類している．
 
-論文固有指標 (`n_splits` / `phase`) は本論文での意味付けに依拠するため **ローカル実装** として残す．正準的な統計プリミティブだけが `socsim-metrics` に共有されている．
+`phase` は **指標ではない**．ラベルであって数ではないので long 形式の `value` 列には載らず，しかも同じ行の `n_surviving` から一意に決まるので，数を割り当てても情報は増えない．最終的な相は `events.jsonl` の `terminal` 行にラベルのまま置く (`"phase": "polarization"`)．
+
+論文固有の量 (`n_splits` / `phase`) は本論文での意味付けに依拠するため **ローカル実装** として残す．正準的な統計プリミティブだけが `socsim-metrics` に共有されている．
 
 ## 再現性・決定論性
 

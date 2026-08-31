@@ -15,10 +15,11 @@ hegselmann2002/
 │   ├── src/
 │   │   ├── main.rs            # CLI (run / sweep)
 │   │   ├── lib.rs             # module re-exports for the binary + integration tests
-│   │   ├── config.rs          # Config + config.json serialization
+│   │   ├── config.rs          # Config + runvault parameters serialization
 │   │   ├── world.rs           # socsim WorldState impl (OpinionWorld, complete graph)
 │   │   ├── mechanisms.rs      # socsim Mechanism re-exports (HegselmannKrauseMechanism / ConvergenceMechanism)
 │   │   ├── metrics.rs         # surviving opinions, splits, phase classification
+│   │   ├── record.rs          # recording into runvault (paper metadata / metrics / terminal events)
 │   │   └── simulation.rs      # init + run driver (SimulationBuilder wiring)
 │   └── tests/
 │       └── integration_test.rs
@@ -38,7 +39,7 @@ hegselmann2002/
 
 ## Model on the socsim framework
 
-The simulation engine is built on the social-simulation framework [rs-social-simulation-tools](https://github.com/akitenkrad/rs-social-simulation-tools) (socsim) — a git dependency, with the commit pinned in `Cargo.lock`. Because the canonical Hegselmann–Krause model is a **complete-graph / non-spatial** model, only `socsim-core` (traits), `socsim-engine` (Simulation / Builder), `socsim-mechanisms` (the HK / convergence pack), `socsim-metrics` (statistics) and `socsim-results` (output helpers) are used — there is **no `socsim-grid` and no `socsim-net`**.
+The simulation engine is built on the social-simulation framework [rs-social-simulation-tools](https://github.com/akitenkrad/rs-social-simulation-tools) (socsim) — a git dependency, with the commit pinned in `Cargo.lock`. Because the canonical Hegselmann–Krause model is a **complete-graph / non-spatial** model, only `socsim-core` (traits), `socsim-engine` (Simulation / Builder), `socsim-mechanisms` (the HK / convergence pack) and `socsim-metrics` (statistics) are used — there is **no `socsim-grid` and no `socsim-net`**. Where the output goes, and its identity, belong to [runvault](https://github.com/akitenkrad/rs-runvault), so `socsim-results` (timestamps, the `latest` symlink, CSV/JSON writing) is not used either.
 
 The socsim APIs used:
 
@@ -72,15 +73,17 @@ Both are deterministic given the seed; only `uniform` consumes RNG draws.
 
 ## Metrics
 
-`metrics.csv` records per step: `t, n_surviving, mean, variance, n_splits, phase, max_delta`.
+`metrics.csv` is runvault's long form (`run_uid, step, step_unit, scope, name, value`). Each step records `n_surviving` / `mean` / `variance` / `n_splits` / `max_delta` at `step_unit=step`, `scope=run`; `converged` and `final_iteration`, which describe the whole run, sit in the same file as rows without a `step`.
 
 - `n_surviving` — number of surviving distinct opinion clusters, computed by `socsim_metrics::stats::distinct_clusters(opinions, CLUSTER_TOL)` with `CLUSTER_TOL = 1e-4` (greedy single-linkage on the sorted opinions; gap > tol starts a new cluster). Paper §4 *surviving opinions* / Fig. 12 *number of opinions at convergence*.
 - `n_splits` — `n_surviving − 1` (paper Fig. 7 "8 splits"). Equivalent definition: how many neighboring gaps in the sorted opinion profile exceed `CLUSTER_TOL`.
 - `mean`, `variance` — from `socsim_metrics::stats::{mean, variance}`.
 - `max_delta` — from `socsim_mechanisms::max_abs_delta(prev, curr)`, the convergence diagnostic.
-- `phase` — `consensus = 1` (n ≤ 1), `polarization = 2` (2..=10), `plurality = 3` (> 10). The numeric thresholds are this repository's choice for readability; the paper itself classifies qualitatively.
+- `phase` — `consensus` (n ≤ 1), `polarization` (2..=10), `plurality` (> 10). The cut-offs are this repository's choice for readability; the paper itself classifies qualitatively.
 
-Paper-specific metrics (`n_splits`, `phase`) are kept as **local implementations** because their meaning is anchored in this paper; the canonical statistical primitives stay shared via `socsim-metrics`.
+`phase` is **not a metric**. It is a label rather than a number, so it cannot sit in the long form's `value` column, and it follows uniquely from the `n_surviving` on the same row, so assigning it a number would add nothing. The final phase is kept as a label on the `terminal` row of `events.jsonl` (`"phase": "polarization"`).
+
+The paper-specific quantities (`n_splits`, `phase`) are kept as **local implementations** because their meaning is anchored in this paper; the canonical statistical primitives stay shared via `socsim-metrics`.
 
 ## Reproducibility & determinism
 

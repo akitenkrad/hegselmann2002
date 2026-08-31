@@ -26,13 +26,36 @@ cargo run --release -- run \
 | `--seed` | ランダム | RNG シード (省略時はランダム) |
 | `--output-dir` | results | 出力ベースディレクトリ |
 
-出力 (`results/{YYYYMMDD_HHMMSS}/` 配下):
+**出力ファイル:**
 
-- `config.json` — 実行設定．
-- `opinions.csv` — long-format 意見軌跡: `t, agent_id, opinion`．
-- `metrics.csv` — 各ステップのメトリクス: `t, n_surviving, mean, variance, n_splits, phase, max_delta`．
+各実行は runvault の run ディレクトリとして保存される．run ディレクトリが出力先そのものなので，タイムスタンプ付きディレクトリも `latest` シンボリックリンクもこちらでは作らない．直近の完了 run のパスは `runvault` に聞く．
 
-`results/latest` シンボリックリンクは最新ディレクトリを指すよう再作成される．
+```bash
+runvault path --experiment hegselmann-bc --latest --subcommand run --standalone
+```
+
+```
+results/
+└── hegselmann-bc/                                  ← experiment
+    ├── latest_finished -> run_20260831_145450_...  ← 最後に完了した run
+    ├── run_20260831_145450_c3b078ae_298d/          ← <subcommand>_<時刻>_<cfg8>_<exec4>
+    │   ├── run.json                                ← メタデータ (git commit / 環境 / 論文情報)
+    │   ├── config.json                             ← 封筒．実験条件は ["parameters"] の下
+    │   ├── metrics.csv                             ← long 形式 (step / scope / name / value)
+    │   ├── events.jsonl                            ← ステップごとの観測 + 終端行 (相のラベル)
+    │   ├── status.json                             ← 終了状態と所要時間
+    │   ├── manifest.csv                            ← artifacts/ と logs/ のハッシュ
+    │   └── artifacts/
+    │       └── opinions.csv                        ← long-format 意見軌跡: t, agent_id, opinion
+    └── figures/                                    ← 可視化スクリプトの出力 (run の外)
+        └── run_20260831_145450_c3b078ae_298d/
+```
+
+作図は run が終わった後に走るので，run ディレクトリの**外** (`<experiment>/figures/<run_slug>/`) に出す．`manifest.csv` は `finish()` が確定させるため，後から `artifacts/` に足したファイルにはハッシュが付かない．
+
+`metrics.csv` は 1 行 1 値の long 形式である．ステップごとの 5 指標 `n_surviving` / `mean` / `variance` / `n_splits` / `max_delta` は `step` を持ち，run 全体を 1 つの値で表す `converged` (0.0 / 1.0) と `final_iteration` は `scope=run` で `step` を持たない．
+
+**相 (`phase`) は指標ではない．** consensus / polarization / plurality はラベルであって数ではなく，しかも `n_surviving` から一意に決まる (≤1 / 2–10 / >10)．数を割り当てても情報は増えないので，最終的な相は `events.jsonl` の `terminal` 行に `"phase": "polarization"` のようにラベルのまま置く．同じ行が `outcome` / `censored` / `budget` で収束と打ち切りも表す．条件の表示は [`show-experiment-settings`](visualization.ja.md#show-experiment-settings) を参照．
 
 ### 相転移の例 (n = 625, uniform)
 
@@ -74,12 +97,28 @@ cargo run --release -- sweep \
 
 各試行は `derive_seed(seed, &[eps.bits, run_id])` で独立なシードを派生させる．Sweep は単純化のため逐次実行 (rayon は使わない)．
 
-出力 (`results/{YYYYMMDD_HHMMSS}_sweep/` 配下):
+**出力ファイル:**
 
-- `sweep_config.json` — スイープ設定．
-- `sweep_summary.csv` — `(eps, run)` ごとに 1 行: `eps, run_id, seed, converged, final_iteration, n_surviving, mean, variance, n_splits, phase, max_delta`．
+sweep は「親 run 1 本 + ε ごとの子 run」として記録される．子は親の下ではなく experiment ディレクトリの兄弟として並び，`lineage.parent_run_uid` で親を指す．1 行 1 試行のサマリ CSV は書かない (同じ値は各子 run の `events.jsonl` にある)．
 
-`results/latest` シンボリックリンクは sweep ディレクトリを指すよう再作成される．
+子のサブコマンド名は `run` ではなく `sweep-point` である．`run` は 1 本のシミュレーション，子は同一条件の `runs` 本で，中身の違う 2 つを同じ名前に同居させると `runvault path --subcommand run` がどちらを返すか分からなくなるためである．
+
+```
+results/
+└── hegselmann-bc/
+    ├── sweep_20260831_145451_23b44915_976d/         ← 親．parameters が ε グリッドの定義
+    │   ├── run.json                                 ← lineage.sweep_id を持つ．rng.master_seed は null
+    │   └── config.json
+    ├── sweep-point_20260831_145451_2c10e235_bfc8/   ← 子 (ε 1 点)．lineage.parent_run_uid = 親の run_uid
+    │   ├── config.json                              ← parameters に eps_l / eps_r / runs
+    │   ├── metrics.csv                              ← 条件を 1 つの値で表す集約のみ (scope=run)
+    │   └── events.jsonl                             ← 試行ごとに observation 1 行 + terminal 1 行
+    └── ...
+```
+
+子の `events.jsonl` の `terminal` 行が，旧 `sweep_summary.csv` の 1 行に対応する — `unit_id` (`trial-<i>`) / `seed` / `t` (= `final_iteration`) / `censored` (= 収束の否定) / `n_surviving` / `mean` / `variance` / `n_splits` / `max_delta` / `phase`．試行ごとの値を `metrics.csv` に置くと (`run_uid`, `step`, `scope`, `name`) が重複するので，散らばりが要る図はこちらから組み直す．
+
+親のパスは `runvault path --experiment hegselmann-bc --latest --subcommand sweep` で取れる．`hegselmann-bc-tools visualize-sweep` はこの親を受け取り，子 run を集めて従来のサマリ表を組み直す．
 
 ## Phase 3 ステータス
 

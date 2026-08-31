@@ -144,10 +144,17 @@ impl Config {
         (self.eps_l - self.eps_r).abs() < f64::EPSILON
     }
 
-    /// `config.json` 用の表現を組み立てる．
-    pub fn to_run_config_json(&self) -> RunConfigJson {
-        RunConfigJson {
-            command: "run",
+    /// runvault の `config.json` に入れる実験条件を組み立てる．
+    ///
+    /// 出力先は run ディレクトリそのものなので条件ではない (旧 `config.json` が
+    /// 持っていた `output_dir` / `command` は runvault 側の `run.json` に
+    /// `subcommand` として入るため，ここからは落とす)．
+    ///
+    /// `seed` は `Option` ではなく実体化した値を受け取る．`--seed` 省略時に
+    /// シミュレーション側で `rand::random` に落とすと，実際に使われたシードが
+    /// どこにも残らないため，呼び出し側が先に確定させる．
+    pub fn to_parameters(&self, seed: u64) -> RunParameters {
+        RunParameters {
             n: self.n,
             eps_l: self.eps_l,
             eps_r: self.eps_r,
@@ -155,26 +162,23 @@ impl Config {
             start_profile: self.start_profile.label(),
             max_iterations: self.max_iterations,
             tol: self.tol,
-            seed: self.seed,
-            output_dir: self.output_dir.clone(),
+            seed,
         }
     }
 }
 
-/// `config.json` (run 用) のシリアライズ表現．
+/// `run` の実験条件 (runvault の `config.json` の `parameters` に入る)．
 #[derive(Serialize)]
-pub struct RunConfigJson {
-    pub command: &'static str,
+pub struct RunParameters {
     pub n: usize,
     pub eps_l: f64,
     pub eps_r: f64,
-    /// `eps_l == eps_r` のとき `true`．Phase 3 の非対称 BC モード時のみ false．
+    /// `eps_l == eps_r` のとき `true`．非対称 BC モード時のみ false．
     pub symmetric: bool,
     pub start_profile: &'static str,
     pub max_iterations: usize,
     pub tol: f64,
-    pub seed: Option<u64>,
-    pub output_dir: String,
+    pub seed: u64,
 }
 
 #[cfg(test)]

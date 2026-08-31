@@ -27,5 +27,9 @@ socsim-mechanisms = { git = "https://github.com/akitenkrad/rs-social-simulation-
 # 正準統計 (mean / variance / distinct_clusters / spread / bimodality_coefficient 等)．
 # 論文固有指標 (n_splits, phase 分類) のみローカル実装し，それ以外は流用する．
 socsim-metrics    = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-metrics" }
-# 出力 (timestamp / latest symlink / serde CSV/JSON 書き出し) の共有ヘルパ．
-socsim-results    = { git = "https://github.com/akitenkrad/rs-social-simulation-tools", branch = "main", package = "socsim-results" }
+
+# runvault — 実験記録基盤．run ディレクトリ・config.json・metrics.csv・events.jsonl・
+# manifest を持つ．出力の置き場と同一性はこちらに預けるので，socsim-results
+# (timestamp / latest symlink / CSV・JSON 書き出し) はもう使わない．
+# git 依存．具体的な commit は Cargo.lock で固定される．
+runvault = { git = "https://github.com/akitenkrad/rs-runvault", branch = "main" }

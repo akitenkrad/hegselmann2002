@@ -12,12 +12,13 @@
 //! + `reproduce` + socsim 上流 PR) は拡張点として配線・コメントだけ残してある．
 //!
 //! 設定構造体 (`config`)・世界状態 (`world`)・更新メカニズム再エクスポート
-//! (`mechanisms`)・実行ドライバ (`simulation`)・集計メトリクス (`metrics`) を
-//! モジュールとして公開し，バイナリ (`hegselmann-bc`) と統合テストの双方から
-//! 利用する．
+//! (`mechanisms`)・実行ドライバ (`simulation`)・集計メトリクス (`metrics`)・
+//! runvault への記録 (`record`) をモジュールとして公開し，バイナリ
+//! (`hegselmann-bc`) と統合テストの双方から利用する．
 
 pub mod config;
 pub mod mechanisms;
 pub mod metrics;
+pub mod record;
 pub mod simulation;
 pub mod world;

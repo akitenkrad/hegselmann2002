@@ -2,36 +2,51 @@
 
 # 可視化
 
-Python パッケージ `hegselmann-bc-tools` (uv workspace メンバ) は `results/` 配下の Rust 出力を読み，図を生成する．workspace ルートで `uv sync` を一度実行してインストールする．
+Python パッケージ `hegselmann-bc-tools` (uv workspace メンバ) は runvault の run ディレクトリを読み，図を生成する．workspace ルートで `uv sync` を一度実行してインストールする．
 
 ```bash
 uv sync
 uv run hegselmann-bc-tools visualize
 uv run hegselmann-bc-tools visualize-sweep
-uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest
+uv run hegselmann-bc-tools show-experiment-settings
 ```
 
 統合 CLI は 3 つのサブコマンドへディスパッチする．サブコマンド以降の引数は対応モジュールの argparse へそのまま渡される．
 
+**どの run を見るかは runvault が答える．** ディレクトリを指定しなければ `runvault path --experiment hegselmann-bc --latest --subcommand ...` が返す run を対象にするので，`results/` を走査して新しそうなディレクトリを当てにいくことはしない．`runvault` コマンドが PATH にあるか，環境変数 `RUNVAULT` がバイナリを指している必要がある．
+
+```bash
+cargo install --path <rs-runvault>/crates/runvault      # PATH に置く
+export RUNVAULT=<rs-runvault>/target/debug/runvault     # または直接指す
+```
+
+**図は run ディレクトリの外に置く．** 出力先は `<results_root>/hegselmann-bc/figures/<run_slug>/` である．`manifest.csv` は `finish()` が確定させるので，run が終わった後に作るものを `artifacts/` に足すとハッシュが付かず，記録と食い違う．
+
+runvault 以前の `results/<timestamp>/` も引き続き読める (`--results-dir` に直接渡す)．その場合は figures も従来どおり `<run>/figures/` に出る．
+
 ## `visualize` — 意見軌跡
 
-`run` 結果 (既定 `results/latest`) の `opinions.csv` と `metrics.csv` を読み，`{results-dir}/figures/` に 2 枚の図を出力する:
+`run` の run ディレクトリから `artifacts/opinions.csv` と `metrics.csv` (long 形式) を読み，2 枚の図を出力する:
 
 - `opinion_trajectory.png` — 意見軌跡 (x = 時間，y = 意見 ∈ `[0,1]`，エージェントごとに 1 本の半透明線; 論文 Fig. 2 / 7 / 8 風)．最終クラスタ中心を破線水平線で重ね描き，多元・分極・合意が一目で判別できる．タイトルに生存意見数 `n_surviving` を表示する．
 - `metrics_timeseries.png` — 3 段: `n_surviving` (log y) / `variance` / `max|Δx|` (log y，収束指標)．
 
 ```bash
-uv run hegselmann-bc-tools visualize --results-dir results/latest
+uv run hegselmann-bc-tools visualize
+uv run hegselmann-bc-tools visualize --results-dir "$(runvault path --experiment hegselmann-bc --latest --subcommand run --standalone)"
 ```
+
+`--subcommand run --standalone` で絞っているので，sweep の親も子も掴むことはない．
 
 | フラグ | 既定値 | 説明 |
 |---|---|---|
-| `--results-dir` | results/latest | run の出力ディレクトリ |
-| `--output-dir` | `{results-dir}/figures` | 図の保存先ディレクトリ |
+| `--results-dir` | `runvault path --latest --subcommand run --standalone` | run ディレクトリ |
+| `--results-root` | results | `--results-dir` 未指定時に runvault が探す results ルート |
+| `--output-dir` | `<experiment>/figures/<run_slug>/` | 図の保存先ディレクトリ |
 
 ## `visualize-sweep` — 相図
 
-`sweep` 結果 (既定 `results/latest`) の `sweep_summary.csv` を読み，以下を出力する:
+sweep の親 run を受け取り，`lineage.parent_run_uid` で親を指す子 run (`sweep-point`) の `events.jsonl` を集めて 1 行 1 試行の表を組み直し，以下を出力する (`sweep_summary.csv` はもう書かれない)．±1σ バンドを描くには条件ごとの平均ではなく個々の試行が要るので，子の run スコープ集約ではなく終端行を読む:
 
 - `visualize_sweep.png` — 上下 2 段の図:
   - **上段:** 生存意見数の平均 vs ε，±1σ バンド付き (論文 Fig. 3 / 12a 風; 合意境界 1 クラスタを破線で示す)．
@@ -40,26 +55,31 @@ uv run hegselmann-bc-tools visualize --results-dir results/latest
 合意ブリンク数値 `ε*` (生存意見数の試行平均が初めて 1 に達する最小 ε) も標準出力に印字される．
 
 ```bash
-uv run hegselmann-bc-tools visualize-sweep --sweep-dir results/latest
+uv run hegselmann-bc-tools visualize-sweep
+uv run hegselmann-bc-tools visualize-sweep --sweep-dir "$(runvault path --experiment hegselmann-bc --latest --subcommand sweep)"
 ```
 
 | フラグ | 既定値 | 説明 |
 |---|---|---|
-| `--sweep-dir` | results/latest | sweep の出力ディレクトリ (`--results-dir` も受け付ける) |
-| `--output-dir` | `{sweep-dir}/figures` | 図の保存先ディレクトリ |
+| `--sweep-dir` | `runvault path --latest --subcommand sweep` | sweep 親 run のディレクトリ (`--results-dir` も受け付ける) |
+| `--results-root` | results | `--sweep-dir` 未指定時に runvault が探す results ルート |
+| `--output-dir` | `<experiment>/figures/<run_slug>/` | 図の保存先ディレクトリ |
 
 ## `show-experiment-settings`
 
-結果ディレクトリ配下の `config.json` (run) もしくは `sweep_config.json` (sweep) を整形表示する．`results/latest` シンボリックリンクも解決する．機械可読出力は `--json` で得られる．
+run ディレクトリの `config.json` から実験条件を整形表示する．`config.json` は runvault の封筒 (`schema_version` / `run_uid` / `runvault` / `parameters`) で，条件は `parameters` の下にある．`run` / `sweep` / `sweep-point` のどれかは `run.json` の `subcommand` が答えるので，どれを指定してもよい．legacy の flat な `config.json` / `sweep_config.json` も読める．機械可読出力は `--json` で得られる．
 
 ```bash
-uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest
-uv run hegselmann-bc-tools show-experiment-settings --results-dir results/latest --json
+uv run hegselmann-bc-tools show-experiment-settings
+uv run hegselmann-bc-tools show-experiment-settings --results-dir "$(runvault path --experiment hegselmann-bc --latest --subcommand sweep)"
+uv run hegselmann-bc-tools show-experiment-settings --json
 ```
 
 ## `reproduce` — 論文 Figure 一括再現
 
-Rust バイナリ (`cargo run --release -- run / sweep ...`) を Figure spec ごとに 1 回ずつ呼び出し，生成された CSV を読み込んで Figure ごとの PNG を 1 つのタイムスタンプ付きディレクトリにまとめる．中間 `opinions.csv` / `metrics.csv` / `sweep_summary.csv` は cargo の出力ルート (`results/<inner_ts>(_sweep)?/`) に残り，そのパスは `reproduce_summary.json` に記録される．
+Rust バイナリ (`cargo run --release -- run / sweep ...`) を Figure spec ごとに 1 回ずつ呼び出し，生成されたデータを読み込んで Figure ごとの PNG を 1 つのタイムスタンプ付きディレクトリにまとめる．中間データ (`artifacts/opinions.csv` / `metrics.csv` / `events.jsonl`) は runvault の run ディレクトリ (`results/hegselmann-bc/<run_slug>/`) に残り，そのパスは `reproduce_summary.json` に記録される．
+
+どの run が今の呼び出しの出力かは `runvault path --latest` に聞くので，ディレクトリ名や mtime から推測しない．同一秒内に複数 spec が走っても衝突しないため，従来必要だった秒境界待ちのスリープも無くなった．
 
 ```bash
 uv run hegselmann-bc-tools reproduce                  # フル再現 (論文値)
@@ -97,7 +117,7 @@ results/reproduce_<YYYYMMDD_HHMMSS>/
 |---|---|---|
 | `--specs` | (全て) | カンマ区切りで実行する spec ID (`fig02,fig03,fig07,fig08,fig11,fig12`) |
 | `--output-dir` | results | 結果ルート (workspace 相対)．reproduce 一式は `<output-dir>/reproduce_<ts>/` に出る |
-| `--cargo-output-dir` | `--output-dir` と同じ | cargo の `--output-dir` に渡す中間 CSV 用ディレクトリ |
+| `--cargo-output-dir` | `--output-dir` と同じ | cargo の `--output-dir` に渡す results ルート |
 | `--workspace-root` | (自動) | cargo workspace ルートを上書き (環境変数 `HEGSELMANN_BC_PROJECT_ROOT` も可) |
 | `--quick` | off | fig02 / fig03 / fig12 を縮小実行 (n=125, runs=5)．動作確認専用．論文値検証には使わない |
 | `--skip-build` | off | `cargo build --release` をスキップ (ビルド済み前提) |

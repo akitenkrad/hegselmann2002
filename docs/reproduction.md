@@ -14,6 +14,8 @@ uv run hegselmann-bc-tools reproduce --quick    # lightweight smoke run (n=125, 
 uv run hegselmann-bc-tools reproduce --specs fig02,fig03
 ```
 
+Each spec's intermediate data stays in its runvault run directory (`results/hegselmann-bc/<run_slug>/`), located through `runvault path --latest --subcommand ...`; only the PNGs and the summary are bundled under `results/reproduce_<timestamp>/`.
+
 See [`visualization.md`](visualization.md#reproduce--batch-paper-figure-reproduction) for the complete CLI reference and output layout.
 
 | Paper figure | Spec ID | Subcommand | Parameters | Expected outcome |

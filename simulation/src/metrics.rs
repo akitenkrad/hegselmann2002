@@ -14,8 +14,6 @@
 //!   (`Phase`; 論文 Fig. 3 の相転移) は本論文に固有の意味付けがあるため
 //!   ローカル実装に留める (設計書 §4.3 評価指標 表)．
 
-use serde::Serialize;
-
 use socsim_metrics::stats::{distinct_clusters, mean as stats_mean, variance as stats_variance};
 
 /// 生存意見クラスタの結合許容誤差 (論文の "8 splits" 等の解像度に合わせる)．
@@ -88,8 +86,13 @@ pub fn n_splits(opinions: &[f64]) -> usize {
     n_surviving(opinions).saturating_sub(1)
 }
 
-/// 1 ステップ分のメトリクス (metrics.csv の 1 行)．
-#[derive(Debug, Clone, Serialize)]
+/// 1 ステップ分のメトリクス．
+///
+/// runvault の `metrics.csv` は long 形式なので，この構造体がそのまま 1 行に
+/// なるわけではない．`crate::record::log_step` が数値フィールドを名前つきの
+/// 指標へ展開する ([`Metrics::phase`] だけは category なので指標にならず，
+/// 終端イベントのラベルとして書かれる)．
+#[derive(Debug, Clone)]
 pub struct Metrics {
     /// ステップ番号 t．
     pub t: usize,

@@ -14,6 +14,8 @@ uv run hegselmann-bc-tools reproduce --quick    # 軽量モード (n=125, runs=5
 uv run hegselmann-bc-tools reproduce --specs fig02,fig03
 ```
 
+各 spec の中間データは runvault の run ディレクトリ (`results/hegselmann-bc/<run_slug>/`) に残り，その場所は `runvault path --latest --subcommand ...` で解決される．PNG とサマリだけが `results/reproduce_<timestamp>/` にまとまる．
+
 CLI リファレンスと出力レイアウトは [`visualization.ja.md`](visualization.ja.md#reproduce--論文-figure-一括再現) を参照．
 
 | 論文 Figure | Spec ID | サブコマンド | パラメータ | 期待される結果 |

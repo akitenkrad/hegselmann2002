@@ -2,14 +2,18 @@
 """
 visualize_sweep.py — Hegselmann & Krause (2002) BC モデル スイープ結果の可視化．
 
-results/latest (または --sweep-dir 指定先) の sweep_summary.csv を読み，
 ε 走査における (上段) 生存意見数の平均±バンド (論文 Fig. 3 / 12a 風) と
 (下段) 最終平均意見の平均 (論文 Fig. 12c 風: 対称なので 0.5 付近に張り付くことを
 確認できる) を上下 2 段で表示する．
 
+1 行 1 試行の表は，スイープ親 run の子 (`subcommand=sweep-point`) の
+`events.jsonl` から組み直す．散らばり (±1σ) を描くには条件ごとの平均ではなく
+個々の試行が要るので，子 run の run スコープ集約ではなく終端イベントを読む．
+runvault 以前の `sweep_summary.csv` もそのまま読める．
+
 Usage:
     uv run hegselmann-bc-tools visualize-sweep
-    uv run hegselmann-bc-tools visualize-sweep --sweep-dir results/20260528_160000_sweep
+    uv run hegselmann-bc-tools visualize-sweep --sweep-dir "$(runvault path --experiment hegselmann-bc --latest --subcommand sweep)"
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ import os
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from runvault.read import figures_dir, runvault_path, sweep_events_table
 
 # --------------------------------------------------------------------------- #
 # 表示設定
@@ -40,10 +45,25 @@ COLOR_REF = "#888888"
 # --------------------------------------------------------------------------- #
 
 def load_summary(sweep_dir: str) -> pd.DataFrame:
-    path = os.path.join(sweep_dir, "sweep_summary.csv")
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"sweep_summary.csv が見つかりません: {path}")
-    return pd.read_csv(path)
+    """1 行 1 試行の表 (`eps`, `run_id`, 最終メトリクス) を返す．
+
+    runvault はこの表をディスクに持たないので，スイープ親の子 run の終端イベント
+    から組み直す．対称スイープなので条件を表す列は `eps_l` 1 本で足り，本モデルの
+    表記に合わせて `eps` に，`unit_id` (`trial-<i>`) は `run_id` に直す．
+
+    runvault 以前のスイープには `sweep_summary.csv` が残っているので，あればそちら
+    を読む．そちらが正本だった時期の結果を読めなくする理由はない．
+    """
+    legacy = os.path.join(sweep_dir, "sweep_summary.csv")
+    if os.path.exists(legacy):
+        return pd.read_csv(legacy)
+
+    df = sweep_events_table(sweep_dir, ["eps_l"], kind="terminal")
+    df = df.rename(columns={"eps_l": "eps"})
+    df["run_id"] = df["unit_id"].str.removeprefix("trial-").astype(int)
+    df["converged"] = ~df["censored"]
+    df["final_iteration"] = df["t"]
+    return df
 
 
 def aggregate(df: pd.DataFrame) -> pd.DataFrame:
@@ -127,12 +147,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--sweep-dir", "--sweep_dir", "--results-dir", "--results_dir",
-        default="results/latest",
-        help="スイープ出力ディレクトリ (default: results/latest)",
+        default=None,
+        help=(
+            "スイープ親 run のディレクトリ．未指定時は runvault に最新のスイープを "
+            "聞く (--experiment hegselmann-bc --subcommand sweep)．"
+        ),
+    )
+    p.add_argument(
+        "--results-root", "--results_root", default="results",
+        help="--sweep-dir 未指定時に runvault が探す results ルート (default: results)",
     )
     p.add_argument(
         "--output-dir", "--output_dir", default=None,
-        help="図の保存先ディレクトリ (default: {sweep-dir}/figures)",
+        help="図の保存先ディレクトリ (default: results/hegselmann-bc/figures/{run_slug})",
     )
     return p.parse_args(argv)
 
@@ -140,16 +167,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    out_dir = args.output_dir if args.output_dir else os.path.join(args.sweep_dir, "figures")
+    sweep_dir = args.sweep_dir
+    if sweep_dir is None:
+        sweep_dir = runvault_path(
+            "hegselmann-bc", args.results_root, subcommand="sweep"
+        )
+
+    out_dir = args.output_dir if args.output_dir else figures_dir(sweep_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     print("=== Hegselmann–Krause (2002) BC 力学 スイープ可視化 ===")
-    print(f"スイープ: {args.sweep_dir}")
+    print(f"スイープ: {sweep_dir}")
     print(f"出力先:   {out_dir}")
     print("-------------------------------------------------")
 
-    print("[1/2] sweep_summary.csv を読み込み中 ...")
-    df = load_summary(args.sweep_dir)
+    print("[1/2] 子 run の終端イベントから 1 行 1 試行の表を組み立て中 ...")
+    df = load_summary(sweep_dir)
     agg = aggregate(df)
     print(f"      ε 値 {df['eps'].nunique()} × 試行 {df['run_id'].nunique()}")
 

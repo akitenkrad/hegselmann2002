@@ -5,8 +5,11 @@
 //! パックの [`HegselmannKrauseMechanism`] が `Interaction` フェーズで同期適用
 //! する．早期停止は [`ConvergenceMechanism`] を `PostStep` フェーズに配線して
 //! `max|Δx| < tol` で `request_stop` する (論文 §3 Result 5 の有限時間収束)．
+//!
+//! 出力の置き場と同一性は runvault が持つ．ここが書くのは意見の軌跡
+//! ([`save_opinions`]) だけで，指標は [`crate::record`] 経由で run へ落とす．
 
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::BufWriter;
 
 use csv::Writer;
@@ -144,7 +147,12 @@ pub fn run(cfg: &Config) -> SimulationResult {
 }
 
 /// 意見履歴を long-format CSV (`t, agent_id, opinion`) に保存する．
+///
+/// 保存先は run ディレクトリの `artifacts/` で，実行中に書いたものとして
+/// `manifest.csv` に載る．指標は runvault の `metrics.csv` が持つので，ここが
+/// 書くのは意見の軌跡だけである．
 pub fn save_opinions(opinion_history: &[Vec<f64>], output_dir: &str) {
+    create_dir_all(output_dir).expect("出力ディレクトリの作成に失敗");
     let path = format!("{}/opinions.csv", output_dir);
     let file = File::create(&path).expect("opinions.csv の作成に失敗");
     let mut wtr = Writer::from_writer(BufWriter::new(file));
@@ -157,20 +165,6 @@ pub fn save_opinions(opinion_history: &[Vec<f64>], output_dir: &str) {
         }
     }
     wtr.flush().expect("フラッシュに失敗");
-}
-
-/// メトリクス履歴を CSV に保存する．
-///
-/// 書き出し機構は `socsim_results::write_csv` に委譲する (各行を `serialize`
-/// し先頭行にヘッダを書く csv クレートの標準挙動)．
-pub fn save_metrics(metrics: &[Metrics], output_dir: &str) {
-    let path = format!("{}/metrics.csv", output_dir);
-    socsim_results::write_csv(metrics, &path).expect("metrics.csv の書き込みに失敗");
-}
-
-/// 出力ディレクトリを作成する (idempotent)．
-pub fn ensure_output_dir(output_dir: &str) {
-    socsim_results::ensure_dir(output_dir).expect("出力ディレクトリの作成に失敗");
 }
 
 #[cfg(test)]

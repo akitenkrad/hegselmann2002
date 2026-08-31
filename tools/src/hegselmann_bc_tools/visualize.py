@@ -2,13 +2,21 @@
 """
 visualize.py — Hegselmann & Krause (2002) BC モデル 単一実行結果の可視化．
 
-results/latest (または --results-dir 指定先) の opinions.csv / metrics.csv を読み，
-時間×意見の軌跡図 (論文 Fig. 2 / 7 / 8 風) と，メトリクス時系列 (生存意見数 /
-分散 / max|Δx|) を生成する．
+runvault の run ディレクトリから意見軌跡 (`artifacts/opinions.csv`) と
+メトリクス (`metrics.csv`) を読み，時間×意見の軌跡図 (論文 Fig. 2 / 7 / 8 風) と，
+メトリクス時系列 (生存意見数 / 分散 / max|Δx|) を生成する．
+
+どの run を見るかは `--results-dir` を省略すれば runvault が答える
+(`runvault path --experiment hegselmann-bc --latest --subcommand run --standalone`)．
+`results/` を自分で走査して新しそうなディレクトリを当てにいくことはしない．
+
+図は run ディレクトリの *隣* (`results/hegselmann-bc/figures/<run_slug>/`) に置く．
+`manifest.csv` は `finish()` が確定させたもので，run が終わった後に足したものは
+そこに載らないためである．
 
 Usage:
     uv run hegselmann-bc-tools visualize
-    uv run hegselmann-bc-tools visualize --results-dir results/20260528_153000
+    uv run hegselmann-bc-tools visualize --results-dir "$(runvault path --experiment hegselmann-bc --latest --subcommand run --standalone)"
     uv run hegselmann-bc-tools visualize --output-dir out
 """
 
@@ -20,6 +28,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from runvault.read import artifacts_dir, figures_dir, metrics_wide, runvault_path
 
 # --------------------------------------------------------------------------- #
 # 表示設定 (CJK フォントが利用不能でも落ちないように try)
@@ -48,9 +57,17 @@ def load_opinions(path: str) -> pd.DataFrame:
 
 
 def load_metrics(path: str) -> pd.DataFrame:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"metrics.csv が見つかりません: {path}")
-    return pd.read_csv(path)
+    """ステップごとのメトリクスを 1 ステップ 1 行の表として読む．
+
+    runvault の `metrics.csv` は long 形式なので `metrics_wide` で横に倒す．
+    時間軸の列名は runvault では `step` だが，本モデルの表記は論文に合わせた `t`
+    なので，こちら側の呼び名に揃えてから返す (legacy の wide な metrics.csv は
+    もともと `t` 列を持つので何もしない)．
+    """
+    df = metrics_wide(path)
+    if "step" in df.columns and "t" not in df.columns:
+        df = df.rename(columns={"step": "t"})
+    return df
 
 
 def to_wide(df_long: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -169,12 +186,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Hegselmann & Krause (2002) BC モデル 意見軌跡 可視化",
     )
     p.add_argument(
-        "--results-dir", "--results_dir", default="results/latest",
-        help="Rust シミュレーションの出力ディレクトリ (default: results/latest)",
+        "--results-dir", "--results_dir", default=None,
+        help=(
+            "runvault の run ディレクトリ．未指定時は runvault に最新の run を聞く "
+            "(--experiment hegselmann-bc --subcommand run --standalone)．"
+        ),
+    )
+    p.add_argument(
+        "--results-root", "--results_root", default="results",
+        help="--results-dir 未指定時に runvault が探す results ルート (default: results)",
     )
     p.add_argument(
         "--output-dir", "--output_dir", default=None,
-        help="図の保存先ディレクトリ (default: {results-dir}/figures)",
+        help="図の保存先ディレクトリ (default: results/hegselmann-bc/figures/{run_slug})",
     )
     return p.parse_args(argv)
 
@@ -182,13 +206,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    opinions_path = os.path.join(args.results_dir, "opinions.csv")
-    metrics_path = os.path.join(args.results_dir, "metrics.csv")
-    out_dir = args.output_dir if args.output_dir else os.path.join(args.results_dir, "figures")
+    run_dir = args.results_dir
+    if run_dir is None:
+        run_dir = runvault_path(
+            "hegselmann-bc", args.results_root, subcommand="run", standalone=True
+        )
+
+    opinions_path = os.path.join(artifacts_dir(run_dir), "opinions.csv")
+    metrics_path = os.path.join(run_dir, "metrics.csv")
+    out_dir = args.output_dir if args.output_dir else figures_dir(run_dir)
 
     os.makedirs(out_dir, exist_ok=True)
 
     print("=== Hegselmann–Krause (2002) BC 力学 可視化 ===")
+    print(f"run:        {run_dir}")
     print(f"意見軌跡:   {opinions_path}")
     print(f"メトリクス: {metrics_path}")
     print(f"出力先:     {out_dir}")
