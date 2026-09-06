@@ -71,6 +71,20 @@ pub fn init_opinions(cfg: &Config, rng: &mut SimRng) -> Vec<f64> {
 /// `socsim-mechanisms` の `ConvergenceMechanism` も同じロジックで `request_stop`
 /// するため，両者は同じステップで停止する．
 pub fn run(cfg: &Config) -> SimulationResult {
+    run_observed(cfg, |_| {})
+}
+
+/// The same, calling `on_step` once for every BC iteration.
+///
+/// The callback is where a caller counts its progress. A step is the unit
+/// because it is the unit the cost is in: one iteration re-computes every
+/// agent's confidence set, which is quadratic in `n`. A trial would be a single
+/// tick, and `run` has exactly one trial — it would say nothing at all between
+/// its first line and its last.
+///
+/// It is given the step number rather than nothing so a caller can report
+/// against the iteration count rather than against its own tally.
+pub fn run_observed(cfg: &Config, mut on_step: impl FnMut(usize)) -> SimulationResult {
     let root = cfg.seed.unwrap_or_else(rand::random);
 
     // 初期意見分布 (root から派生した init RNG)．
@@ -135,6 +149,7 @@ pub fn run(cfg: &Config) -> SimulationResult {
         // 不動点に到達したか (= ConvergenceMechanism が request_stop する条件)．
         converged = max_delta < cfg.tol;
         final_iteration = t;
+        on_step(t);
     })
     .expect("シミュレーションの実行に失敗");
 

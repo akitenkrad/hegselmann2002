@@ -20,7 +20,7 @@ use serde::Serialize;
 use hegselmann_bc_simulation::config::{parse_start_profile, Config};
 use hegselmann_bc_simulation::metrics::Phase;
 use hegselmann_bc_simulation::record::{self, DOMAIN, EXPERIMENT, REPO_ID};
-use hegselmann_bc_simulation::simulation::{run, save_opinions};
+use hegselmann_bc_simulation::simulation::{run, run_observed, save_opinions};
 
 // ---------------------------------------------------------------------------
 // CLI 定義
@@ -260,7 +260,21 @@ fn cmd_run(args: RunArgs) {
     println!("出力先: {}", rv.dir().display());
     println!("-------------------------------------------");
 
-    let result = run(&cfg);
+    // 進捗の 1 単位は BC の 1 反復．費用がそこにあり (1 反復で全エージェントの
+    // 信頼集合を数え直すので n に対して二次)，かつ run の試行は 1 本しかないので，
+    // 試行を単位にすると最初の行から最後の行まで何も出ないことになる．
+    //
+    // 分母は持たない．BC は不動点に達した時点で止まり，既定のスイープでは
+    // 2000 試行中 1957 試行が max_iterations に届く前に収束する．上限を分母に
+    // 置くと «届かない分母» になり，実測でも n=4000・ε=0.05 の 1 本が残り 0.2s
+    // の時点で「eta 30s」と出た．自信をもって外れた見積もりは，このモジュールが
+    // 直そうとしている失敗そのものである．反復数は走らせるまで分からないので，
+    // 数えた分だけを出す．
+    let mut stage = rv.unbounded_stage("iterations");
+    let result = run_observed(&cfg, |_| stage.tick());
+    // manifest.csv は finish() で封をされる．その後に 1 行足せば，manifest が
+    // 食い違うダイジェストを持つことになる．
+    stage.close();
     save_opinions(&result.opinion_history, &cfg.output_dir);
     record::log_simulation(&mut rv, &result);
     // run は全ステップを観測して metrics.csv に残しているので，観測時刻も全ステップ．
@@ -351,6 +365,16 @@ fn cmd_sweep(args: SweepArgs) {
     println!("出力先: {}", parent.dir().display());
     println!("---------------------------------------------------");
 
+    // グリッド全体で stage を 1 つ．条件ごとに開け直すと小さな 100% が 41 個
+    // 並ぶだけで，スイープ全体のどこにいるかは分からない．
+    //
+    // 単位は反復ではなく試行にする．1 試行が何反復で終わるかは走らせるまで
+    // 分からない (不動点で早期に止まる) ので，反復を分母に取ると
+    // `runs × max_iterations` という決して届かない上限になり，見積もりは最後まで
+    // 数倍長いままになる．試行の数は走らせる前に正確に分かる．1 試行は既定で
+    // 29ms なので，LLM を回す repo と違って試行の中で黙り込むこともない．
+    let mut stage = parent.stage("trials", n_total);
+
     let mut done = 0usize;
 
     for &eps in &epss {
@@ -416,6 +440,7 @@ fn cmd_sweep(args: SweepArgs) {
             trials.push(record::TrialOutcome::from_result(&result));
 
             done += 1;
+            stage.tick();
         }
         record::log_condition_summary(&mut child, &trials);
 
@@ -435,6 +460,8 @@ fn cmd_sweep(args: SweepArgs) {
 
         child.finish().expect("runvault: 子 run の完了に失敗");
     }
+
+    stage.close();
 
     let dir = parent
         .finish()
