@@ -34,6 +34,9 @@ use hegselmann_bc_simulation::simulation::{run, run_observed, save_opinions};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    /// Development run: write it under results/_scratch/ so it is never synced to the vault.
+    #[arg(long, global = true)]
+    scratch: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -187,7 +190,7 @@ struct SweepPointParameters {
 // run
 // ---------------------------------------------------------------------------
 
-fn cmd_run(args: RunArgs) {
+fn cmd_run(args: RunArgs, scratch: bool) {
     let start_profile = parse_start_profile(&args.start).unwrap_or_else(|e| panic!("{}", e));
 
     // シードを実体化してから記録する．--seed 省略時にシミュレーション側で
@@ -221,6 +224,7 @@ fn cmd_run(args: RunArgs) {
     let parameters = cfg.to_parameters(seed);
     let mut rv = Run::start(
         RunOptions::new(EXPERIMENT, "run")
+            .scratch(scratch)
             .repo_id(REPO_ID)
             .domain(DOMAIN)
             .results_root(&args.output_dir)
@@ -308,7 +312,7 @@ fn cmd_run(args: RunArgs) {
 // sweep
 // ---------------------------------------------------------------------------
 
-fn cmd_sweep(args: SweepArgs) {
+fn cmd_sweep(args: SweepArgs, scratch: bool) {
     let start_profile = parse_start_profile(&args.start).unwrap_or_else(|e| panic!("{}", e));
 
     let epss = eps_range(args.eps_min, args.eps_max, args.eps_step);
@@ -332,6 +336,7 @@ fn cmd_sweep(args: SweepArgs) {
     // sweep_id は runvault が親の run_slug で埋める．
     let parent = Run::start(
         RunOptions::new(EXPERIMENT, "sweep")
+            .scratch(scratch)
             .repo_id(REPO_ID)
             .domain(DOMAIN)
             .results_root(&args.output_dir)
@@ -395,6 +400,7 @@ fn cmd_sweep(args: SweepArgs) {
         // 同じ条件の繰り返しは無いので replicate_index は 0．
         let mut child = Run::start(
             RunOptions::new(EXPERIMENT, "sweep-point")
+                .scratch(scratch)
                 .repo_id(REPO_ID)
                 .domain(DOMAIN)
                 .results_root(&args.output_dir)
@@ -478,8 +484,9 @@ fn cmd_sweep(args: SweepArgs) {
 
 fn main() {
     let cli = Cli::parse();
+    let scratch = cli.scratch;
     match cli.command {
-        Commands::Run(args) => cmd_run(args),
-        Commands::Sweep(args) => cmd_sweep(args),
+        Commands::Run(args) => cmd_run(args, scratch),
+        Commands::Sweep(args) => cmd_sweep(args, scratch),
     }
 }
